@@ -5,11 +5,19 @@
 
 # TODO: Create a class called Rectangle with attributes length and width.
 
-class Rectangle():
-    ...
+class Rectangle():          #We create an object called Rectangle
+    def __init__(self, length, width):
+        self.length = length
+        self.width = width
+
+    def area(self):
+        return self.length * self.width
 
 # TODO: Add a class function to calculate the area of the rectangle.
 
+
 # TODO: Create an instance of rectangle class with length 5 and width 3.
+my_rectangle = Rectangle(5, 3)
 
 # TODO: Print the area.
+print("Area of my_rectangle:", my_rectangle.area())

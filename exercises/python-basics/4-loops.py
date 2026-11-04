@@ -8,9 +8,12 @@
 
 break_condition = 0
 
-...
-
-print("out of while loop")
+while break_condition < 10:
+    print(break_condition)
+    break_condition += 1
+else:
+    print("out of while loop")
+print()
 
 # ----------------------------------------------
 
@@ -21,5 +24,30 @@ print("out of while loop")
 # TODO: Iterate over pets, printing each one
 
 pets = ["dog", "cat", "horse", "rabbit", "snake"]
+print(pets)
 
-print(pet)
+for i in pets:
+    print(i)
+
+
+my_list = [34, 71, 81]
+for i in my_list:
+    print(i-23)
+
+print()
+
+
+new_list = range(3)
+print(range(3))
+for i in new_list:
+    print(i)
+print()
+
+for i in range(3, 10):
+    print(i)
+
+
+point = []
+for i in range(3):
+    point.append(i)
+print(point)
