@@ -94,7 +94,7 @@ def create_crochet_pseudosphere(
     height, and two stitches cannot be in the same place. Each round has more
     stitches than a flat circle has room for, so the surface has to ruffle.
 
-    Params:
+    Params:au
         rounds (int): Number of rounds worked into the ring. Default 4.
             Stitch count is multiplied by `increase` every round, so keep
             this low (5 rounds with increase 3 is already 972 stitches).
@@ -304,6 +304,54 @@ def create_crochet_pseudosphere(
         mesh.Vertices.Add(p[0], p[1], p[2])
     for a, b, c in faces:
         mesh.Faces.AddFace(a, b, c)
+    mesh.Normals.ComputeNormals()
+    mesh.Compact()
+    return mesh
+
+
+def create_hyperbolic_paraboloid(
+    width=20.0,
+    length=20.0,
+    height=5.0,
+    divisions=30,
+    base_point=None,
+):
+    """Build a mesh of a hyperbolic paraboloid (saddle surface).
+
+    width      : float -- extent in the X direction
+    length     : float -- extent in the Y direction
+    height     : float -- saddle depth/height
+    divisions  : int   -- number of mesh divisions in each direction
+    base_point : Rhino.Geometry.Point3d -- center of the surface
+
+    Returns a Rhino.Geometry.Mesh.
+    """
+    if base_point is None:
+        base_point = rg.Point3d(0, 0, 0)
+
+    divisions = max(2, int(divisions))
+    mesh = rg.Mesh()
+
+    for j in range(divisions + 1):
+        v = -1.0 + 2.0 * j / divisions
+        y = base_point.Y + v * length / 2.0
+        for i in range(divisions + 1):
+            u = -1.0 + 2.0 * i / divisions
+            x = base_point.X + u * width / 2.0
+            z = base_point.Z + height * (u * u - v * v)
+            mesh.Vertices.Add(x, y, z)
+
+    row_size = divisions + 1
+    for j in range(divisions):
+        for i in range(divisions):
+            index = j * row_size + i
+            mesh.Faces.AddFace(
+                index,
+                index + 1,
+                index + row_size + 1,
+                index + row_size,
+            )
+
     mesh.Normals.ComputeNormals()
     mesh.Compact()
     return mesh
