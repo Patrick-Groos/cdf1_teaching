@@ -618,3 +618,203 @@ def grow_tangent_spheres(
     tip_points = [pt for (pt, d, r) in tips]
 
     return spheres, lines, tip_points
+
+
+# ======================================================================
+# Assignment 2.1 -- hyperbolic forms (geometric algorithm, no simulation)
+#   create_hyperbolic_strip   : flat on one side, ruffled on the other
+#   create_hyperbolic_trumpet : tube that opens into a ruffled rim
+#
+# Hyperbolic idea used by both: the length available along an edge grows
+# EXPONENTIALLY (like the circumference of a circle in the hyperbolic plane).
+# A straight edge cannot hold the extra length, so the edge becomes a wave.
+# The wave amplitude is chosen so the wavy edge has exactly the extra length.
+# ======================================================================
+
+
+def _wave_amplitude(stretch, wavelength):
+    """Amplitude of a sine wave that is `stretch` times longer than straight.
+
+    A sine z = a * sin(2*pi*x / wavelength) is about
+    sqrt(1 + (2*pi*a / wavelength)**2 / 2) times longer than its straight
+    base line. Solving for a gives the formula below.
+    """
+    if stretch <= 1.0:
+        return 0.0
+    return wavelength / (2.0 * math.pi) * math.sqrt(2.0 * (stretch * stretch - 1.0))
+
+
+def _profile_value(u, profile):
+    """Where the strip ruffles: 0 = flat, 1 = full growth. u runs 0..1."""
+    if profile == "peak":
+        return math.sin(math.pi * u)
+    if profile == "wave":
+        return 0.5 - 0.5 * math.cos(4.0 * math.pi * u)
+    return u  # "linear"
+
+
+def _grid_mesh(grid, closed):
+    """Quad mesh from a grid of points (list of rows).
+
+    closed=True joins the last point of every row back to the first one.
+    """
+    mesh = rg.Mesh()
+    rows = len(grid)
+    cols = len(grid[0])
+    for row in grid:
+        for p in row:
+            mesh.Vertices.Add(p.X, p.Y, p.Z)
+    last = cols if closed else cols - 1
+    for i in range(rows - 1):
+        for j in range(last):
+            jn = (j + 1) % cols
+            mesh.Faces.AddFace(i * cols + j, i * cols + jn,
+                               (i + 1) * cols + jn, (i + 1) * cols + j)
+    mesh.Normals.ComputeNormals()
+    mesh.Compact()
+    return mesh
+
+
+def create_hyperbolic_strip(
+    length=20.0,
+    width=8.0,
+    growth=4.0,
+    profile="linear",
+    waves=6,
+    curve_count=8,
+    resolution=120,
+):
+    """Build a strip that is flat along its base edge and ruffles towards the top.
+
+    Algorithm:
+      1. Walk over a grid: x along the strip (0..length), y across it (0..width).
+      2. At every point compute how much longer the row is there than a flat
+         row would be. This stretch grows exponentially with y (hyperbolic):
+             stretch = growth ** (profile(x) * y / width)
+         profile(x) decides WHERE the strip grows (0 = never, 1 = fully).
+      3. Turn the extra length into a wave: z = a * sin(2*pi*x / wavelength),
+         with the amplitude a that gives exactly that stretch.
+      4. Build a mesh and some row curves from the grid.
+
+    Params:
+        length (float): Length of the strip along X. Default 20.0.
+        width (float): Width of the strip along Y. Default 8.0.
+        growth (float): How much longer the top edge is than the base edge
+            where profile = 1. 1 = flat strip. Default 4.0.
+        profile (str): Where the strip ruffles. "linear" = flat left,
+            ruffled right; "peak" = ruffled in the middle; "wave" = two
+            ruffled zones. Default "linear".
+        waves (int): Number of waves along the strip. Default 6.
+        curve_count (int): Number of row curves for the drawing. Default 8.
+        resolution (int): Grid points along the strip; across the strip a
+            quarter of it is used. Default 120.
+
+    Returns:
+        tuple: (mesh, curves)
+            mesh    -- Rhino.Geometry.Mesh
+            curves  -- list of Rhino.Geometry.PolylineCurve, rows across the strip
+    """
+    length = float(length)
+    width = float(width)
+    growth = max(1.0, float(growth))
+    profile = str(profile).strip().lower()
+    waves = max(1, int(waves))
+    nx = max(8, int(resolution))
+    ny = max(4, nx // 4)
+    wavelength = length / waves
+    k = math.log(growth)
+
+    def point(x, y):
+        stretch = math.exp(k * _profile_value(x / length, profile) * y / width)
+        a = _wave_amplitude(stretch, wavelength)
+        return rg.Point3d(x, y, a * math.sin(2.0 * math.pi * x / wavelength))
+
+    # 1.-3. grid of points: one row per y value
+    grid = []
+    for i in range(ny + 1):
+        y = width * i / ny
+        grid.append([point(length * j / nx, y) for j in range(nx + 1)])
+
+    # 4. geometry
+    mesh = _grid_mesh(grid, closed=False)
+    curves = []
+    for c in range(max(2, int(curve_count))):
+        y = width * c / (max(2, int(curve_count)) - 1)
+        polyline = rg.Polyline()
+        for j in range(nx * 2 + 1):
+            polyline.Add(point(length * j / (nx * 2), y))
+        curves.append(rg.PolylineCurve(polyline))
+    return mesh, curves
+
+
+def create_hyperbolic_trumpet(
+    radius=2.0,
+    height=10.0,
+    flare=3.0,
+    growth=2.0,
+    waves=7,
+    curve_count=10,
+    resolution=144,
+):
+    """Build a trumpet: a narrow tube that opens into a ruffled, hyperbolic rim.
+
+    Algorithm:
+      1. Walk up the trumpet with t from 0 (bottom) to 1 (rim).
+      2. The opening: the radius widens slowly at first, then fast
+             R(t) = radius * flare ** (t ** 2)
+      3. The ruffle: each ring is longer than a circle of radius R by
+             stretch(t) = growth ** (t ** 3)
+         so the extra length appears only near the rim and then grows fast.
+      4. Turn the extra length into a wave around the ring:
+             z = height * t + a * sin(waves * angle)
+         with the amplitude a that gives exactly that stretch.
+      5. Build a mesh and some ring curves.
+
+    Params:
+        radius (float): Radius of the tube at the bottom. Default 2.0.
+        height (float): Height of the trumpet. Default 10.0.
+        flare (float): Rim radius divided by bottom radius. Default 3.0.
+        growth (float): How much longer the rim is than a plain circle.
+            1 = smooth rim, higher = stronger ruffles. Default 2.0.
+        waves (int): Number of waves around the rim. Default 7.
+        curve_count (int): Number of ring curves for the drawing. Default 10.
+        resolution (int): Points around each ring; up the trumpet a quarter
+            of it is used. Default 144.
+
+    Returns:
+        tuple: (mesh, curves)
+            mesh    -- Rhino.Geometry.Mesh
+            curves  -- list of closed Rhino.Geometry.PolylineCurve (rings)
+    """
+    radius = float(radius)
+    height = float(height)
+    flare = max(1.0, float(flare))
+    growth = max(1.0, float(growth))
+    waves = max(1, int(waves))
+    na = max(12, int(resolution))
+    nt = max(6, na // 4)
+
+    def point(t, angle):
+        r = radius * flare ** (t * t)
+        stretch = growth ** (t ** 3)
+        a = _wave_amplitude(stretch, 2.0 * math.pi * r / waves)
+        return rg.Point3d(r * math.cos(angle), r * math.sin(angle),
+                          height * t + a * math.sin(waves * angle))
+
+    # 1.-4. grid of points: one closed ring per t value
+    grid = []
+    for i in range(nt + 1):
+        t = i / float(nt)
+        grid.append([point(t, 2.0 * math.pi * j / na) for j in range(na)])
+
+    # 5. geometry
+    mesh = _grid_mesh(grid, closed=True)
+    curves = []
+    count = max(2, int(curve_count))
+    for c in range(count):
+        t = c / float(count - 1)
+        polyline = rg.Polyline()
+        for j in range(na * 2 + 1):
+            polyline.Add(point(t, 2.0 * math.pi * j / (na * 2)))
+        curves.append(rg.PolylineCurve(polyline))
+    return mesh, curves
